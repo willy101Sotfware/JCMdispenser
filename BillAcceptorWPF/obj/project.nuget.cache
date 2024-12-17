@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "yXeVucfwp8Q=",
+  "dgSpecHash": "aSurARUoBg8=",
   "success": true,
-  "projectFilePath": "c:\\Users\\Willian\\Desktop\\JCMdispenser\\BillAcceptorWPF\\BillAcceptorWPF.csproj",
+  "projectFilePath": "C:\\Users\\Willian\\Desktop\\JCMdispenser\\BillAcceptorWPF\\BillAcceptorWPF.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\Willian\\.nuget\\packages\\runtime.linux-arm.runtime.native.system.io.ports\\6.0.0\\runtime.linux-arm.runtime.native.system.io.ports.6.0.0.nupkg.sha512",
     "C:\\Users\\Willian\\.nuget\\packages\\runtime.linux-arm64.runtime.native.system.io.ports\\6.0.0\\runtime.linux-arm64.runtime.native.system.io.ports.6.0.0.nupkg.sha512",
