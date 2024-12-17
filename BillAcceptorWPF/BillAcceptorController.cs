@@ -18,7 +18,7 @@ namespace BillAcceptorWPF
         private const int COMMANDS_SIZE = 50;
         private const int TIMEOUT = 5000;
 
-        // States definitions
+        // Estados definidos
         private enum AcceptorState
         {
             STATUS = 0,
@@ -32,7 +32,7 @@ namespace BillAcceptorWPF
             WAITING_FOR_COMMAND = 8
         }
 
-        // Status Response Values
+        // Valores de respuesta de estado
         private const byte ENABLE = 0x11;
         private const byte ACCEPTING = 0x12;
         private const byte ESCROW = 0x13;
@@ -45,7 +45,7 @@ namespace BillAcceptorWPF
         private const byte DISABLE = 0x1A;
         private const byte INITIALIZE = 0x1B;
 
-        // Error Status Values
+        // Valores de estado de error
         private const byte STACKER_FULL = 0x43;
         private const byte STACKER_OPEN = 0x44;
         private const byte JAM_IN_ACCEPTOR = 0x45;
@@ -55,18 +55,18 @@ namespace BillAcceptorWPF
         private const byte FAILURE = 0x49;
         private const byte COMMUNICATION_ERROR = 0x4A;
 
-        // Power Up Status Values
+        // Valores de estado de encendido
         private const byte POWER_UP = 0x40;
         private const byte POWER_UP_WITH_BILL_IN_ACCEPTOR = 0x41;
         private const byte ENABLE_UP_WITH_BILL_IN_STACKER = 0x42;
 
-        // Protocol Values
+        // Valores de protocolo
         private const byte ENQ = 0x05;
         private const byte ACK = 0x06;
         private const byte NAK = 0x15;
         private const byte INVALID_COMMAND = 0x15;
 
-        // Denomination Values
+        // Valores de denominación
         private const byte ENABLE_DENOMINATION = 0x30;
         private const byte SECURITY = 0x31;
         private const byte COMMUNICATION_MODE = 0x32;
@@ -74,7 +74,7 @@ namespace BillAcceptorWPF
         private const byte DIRECTION = 0x34;
         private const byte OPTIONAL_FUNCTION = 0x35;
 
-        // Set Values
+        // Valores de configuración
         private const byte SET_ENABLE_DENOMINATION = 0x36;
         private const byte SET_SECURITY = 0x37;
         private const byte SET_COMMUNICATION_MODE = 0x38;
@@ -85,7 +85,11 @@ namespace BillAcceptorWPF
         private const byte SET_BOOT_VERSION_INFORMATION = 0x3D;
         private const byte SET_DENOMINATION_DATA = 0x3E;
 
-        // Private fields
+        // Valores específicos del TBV-100
+        private const byte STX = 0x02;
+        private const byte ETX = 0x03;
+
+        // Campos privados
         private SerialPort? serialPort;
         private AcceptorState state = AcceptorState.WAITING_FOR_COMMAND;
         private AcceptorState lastState = AcceptorState.WAITING_FOR_COMMAND;
@@ -110,7 +114,7 @@ namespace BillAcceptorWPF
         {
             try
             {
-                serialPort = new SerialPort(portName, BAUDRATE, Parity.None, 8, StopBits.One);
+                serialPort = new SerialPort(portName, BAUDRATE, Parity.Even, 7, StopBits.One);
                 serialPort.ReadTimeout = TIMEOUT;
                 serialPort.WriteTimeout = TIMEOUT;
                 serialPort.Handshake = Handshake.None;
@@ -135,7 +139,7 @@ namespace BillAcceptorWPF
         public async Task<string> AutoDetectPort()
         {
             string[] availablePorts = SerialPort.GetPortNames();
-            LogMessage?.Invoke(this, "Buscando aceptador de billetes...");
+            LogMessage?.Invoke(this, "Buscando aceptador de billetes TBV-100...");
             LogMessage?.Invoke(this, $"Puertos disponibles: {string.Join(", ", availablePorts)}");
 
             foreach (string port in availablePorts)
@@ -143,52 +147,63 @@ namespace BillAcceptorWPF
                 LogMessage?.Invoke(this, $"Probando puerto {port}...");
                 try
                 {
-                    using (var testPort = new SerialPort(port, BAUDRATE, Parity.None, 8, StopBits.One))
+                    using (var testPort = new SerialPort(port, BAUDRATE, Parity.Even, 7, StopBits.One))
                     {
-                        testPort.ReadTimeout = 2000;
-                        testPort.WriteTimeout = 2000;
+                        testPort.ReadTimeout = 3000;
+                        testPort.WriteTimeout = 3000;
                         testPort.Handshake = Handshake.None;
                         testPort.DtrEnable = true;
                         testPort.RtsEnable = true;
 
                         LogMessage?.Invoke(this, $"Abriendo puerto {port}...");
-                        testPort.Open();
-                        await Task.Delay(500);
 
-                        // Usar el comando de status del Arduino
-                        byte[] testCmd = new byte[5];
-                        testCmd[0] = 0xFC;  // Header
-                        testCmd[1] = 0x05;  // Length
-                        testCmd[2] = 0x11;  // Status command
-                        ushort crc = CalculateCRC(testCmd, 3);
-                        testCmd[3] = (byte)(crc & 0xFF);
-                        testCmd[4] = (byte)(crc >> 8);
+                        // Close port if it's already open
+                        if (testPort.IsOpen)
+                        {
+                            testPort.Close();
+                            await Task.Delay(1000);
+                        }
+
+                        testPort.Open();
+                        await Task.Delay(1000);
+
+                        // Enviar comando de status TBV-100
+                        byte[] testCmd = new byte[7];
+                        testCmd[0] = STX;  // STX
+                        testCmd[1] = 0x08;  // Longitud
+                        testCmd[2] = 0x10;  // Status
+                        testCmd[3] = 0x00;
+                        testCmd[4] = 0x00;
+                        testCmd[5] = ETX;   // ETX
+                        testCmd[6] = CalculateBCC(testCmd, 1, 5);
 
                         LogMessage?.Invoke(this, $"Enviando comando de prueba a {port}...");
                         testPort.DiscardOutBuffer();
                         testPort.DiscardInBuffer();
-                        await Task.Delay(100);
+                        await Task.Delay(200);
                         testPort.Write(testCmd, 0, testCmd.Length);
-                        await Task.Delay(500);
+                        await Task.Delay(1000);
 
                         if (testPort.BytesToRead > 0)
                         {
                             byte[] buffer = new byte[20];
                             int bytesRead = testPort.Read(buffer, 0, buffer.Length);
-                            
-                            string hexResponse = BitConverter.ToString(buffer, 0, bytesRead);
-                            LogMessage?.Invoke(this, $"Respuesta de {port}: {hexResponse}");
-                            
-                            // Verificar respuesta válida
-                            if (bytesRead > 0 && (buffer[0] == 0xFC || buffer[0] == ENQ || buffer[0] == ACK))
+
+                            if (bytesRead > 0 && buffer[0] == STX)  // STX
                             {
-                                LogMessage?.Invoke(this, $"¡Aceptador de billetes encontrado en {port}!");
+                                LogMessage?.Invoke(this, $"¡TBV-100 encontrado en {port}!");
                                 return port;
                             }
                         }
 
                         testPort.Close();
+                        await Task.Delay(500);
                     }
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    LogMessage?.Invoke(this, $"Error: Puerto {port} está siendo usado por otra aplicación");
+                    continue;
                 }
                 catch (Exception ex)
                 {
@@ -197,20 +212,20 @@ namespace BillAcceptorWPF
                 }
             }
 
-            LogMessage?.Invoke(this, "No se encontró el aceptador de billetes en ningún puerto.");
-            throw new Exception("No se encontró el aceptador de billetes.");
+            LogMessage?.Invoke(this, "No se encontró el TBV-100 en ningún puerto.");
+            throw new Exception("No se encontró el TBV-100.");
         }
 
         public async Task Initialize()
         {
-            try 
+            try
             {
                 // Primero detectamos el puerto
                 string portName = await AutoDetectPort();
-                
+
                 // Luego conectamos
                 await Connect(portName);
-                
+
                 // Finalmente inicializamos
                 state = AcceptorState.INITIALIZE;
                 await ProcessState();
@@ -279,7 +294,7 @@ namespace BillAcceptorWPF
             }
             else
             {
-                await Task.Delay(100); // Pequeña pausa para no saturar el puerto
+                await Task.Delay(100);
             }
         }
 
@@ -374,19 +389,19 @@ namespace BillAcceptorWPF
         private async Task StateWaitingForCommand()
         {
             LogMessage?.Invoke(this, "Waiting for command");
-            await Task.Delay(100); // Small delay to prevent CPU hogging
-            // Ya no llamamos a ProcessState aquí para evitar el bucle infinito
+            await Task.Delay(100);
         }
 
         private void CommandStatus()
         {
-            commands[0] = 0xFC;  // Header como en Arduino
-            commands[1] = 0x05;  // Length
-            commands[2] = 0x11;  // Status command
-            // Calculamos CRC
-            ushort crc = CalculateCRC(commands, 3);
-            commands[3] = (byte)(crc & 0xFF);
-            commands[4] = (byte)(crc >> 8);
+            commands[0] = STX;  // STX = 0x02
+            commands[1] = 0x08;  // Longitud
+            commands[2] = 0x10;  // Comando Status para TBV-100
+            commands[3] = 0x00;
+            commands[4] = 0x00;
+            commands[5] = ETX;   // ETX = 0x03
+            byte bcc = CalculateBCC(commands, 1, 5);
+            commands[6] = bcc;
         }
 
         private void CommandStack1()
@@ -411,22 +426,26 @@ namespace BillAcceptorWPF
 
         private void CommandEnable()
         {
-            commands[0] = 0x02;
-            commands[1] = 0x03;
-            commands[2] = 0x06;
-            commands[3] = 0x30;
-            commands[4] = 0x44;
-            commands[5] = 0x03;
+            commands[0] = STX;  // STX = 0x02
+            commands[1] = 0x08;  // Longitud
+            commands[2] = 0x20;  // Comando Enable para TBV-100
+            commands[3] = 0x00;
+            commands[4] = 0x00;
+            commands[5] = ETX;   // ETX = 0x03
+            byte bcc = CalculateBCC(commands, 1, 5);
+            commands[6] = bcc;
         }
 
         private void CommandReset()
         {
-            commands[0] = 0x02;
-            commands[1] = 0x03;
-            commands[2] = 0x06;
-            commands[3] = 0x30;
-            commands[4] = 0x45;
-            commands[5] = 0x03;
+            commands[0] = STX;  // STX = 0x02
+            commands[1] = 0x08;  // Longitud
+            commands[2] = 0x40;  // Comando Reset para TBV-100
+            commands[3] = 0x00;
+            commands[4] = 0x00;
+            commands[5] = ETX;   // ETX = 0x03
+            byte bcc = CalculateBCC(commands, 1, 5);
+            commands[6] = bcc;
         }
 
         private async Task SendCmd(byte[] cmd, int len)
@@ -435,10 +454,10 @@ namespace BillAcceptorWPF
 
             try
             {
-                serialPort.DiscardOutBuffer(); // Limpia el buffer de salida
-                await Task.Delay(50); // Pequeña pausa para asegurar que el dispositivo esté listo
+                serialPort.DiscardOutBuffer();
+                await Task.Delay(50);
                 serialPort.Write(cmd, 0, len);
-                await Task.Delay(50); // Pequeña pausa después de escribir
+                await Task.Delay(50);
             }
             catch (Exception ex)
             {
@@ -453,18 +472,19 @@ namespace BillAcceptorWPF
 
             try
             {
-                serialPort.DiscardInBuffer(); // Limpia el buffer de entrada
-                
-                // Espera hasta que haya datos disponibles
-                int retries = 10;
+                serialPort.DiscardInBuffer();
+
+                // Increased retries and timeout
+                int retries = 20;
                 while (retries > 0 && serialPort.BytesToRead == 0)
                 {
-                    await Task.Delay(100); // Espera 100ms entre intentos
+                    await Task.Delay(200);
                     retries--;
                 }
 
                 if (serialPort.BytesToRead > 0)
                 {
+                    await Task.Delay(200);
                     int bytesRead = serialPort.Read(response, 0, response.Length);
                     if (bytesRead > 0)
                     {
@@ -559,55 +579,58 @@ namespace BillAcceptorWPF
 
         private void StatusCheckerFilling()
         {
-            statusResponseTable[0] = ENABLE;                                             flagForResponseAction[0] = (byte)AcceptorState.STATUS;
-            statusResponseTable[1] = ACCEPTING;                                          flagForResponseAction[1] = (byte)AcceptorState.STATUS;
-            statusResponseTable[2] = ESCROW;                                             flagForResponseAction[2] = (byte)AcceptorState.STACK;
-            statusResponseTable[3] = STACKING;                                           flagForResponseAction[3] = (byte)AcceptorState.STATUS;
-            statusResponseTable[4] = VEND_VALID;                                         flagForResponseAction[4] = (byte)AcceptorState.VEND_VALID;
-            statusResponseTable[5] = STACKED;                                            flagForResponseAction[5] = (byte)AcceptorState.STATUS;
-            statusResponseTable[6] = REJECTING;                                          flagForResponseAction[6] = (byte)AcceptorState.GET_DATA;
-            statusResponseTable[7] = RETURNING;                                          flagForResponseAction[7] = (byte)AcceptorState.STATUS;
-            statusResponseTable[8] = HOLDING;                                            flagForResponseAction[8] = (byte)AcceptorState.FATAL_ERROR;
-            statusResponseTable[9] = DISABLE;                                            flagForResponseAction[9] = (byte)AcceptorState.WAITING_FOR_COMMAND;
-            statusResponseTable[10] = INITIALIZE;                                        flagForResponseAction[10] = (byte)AcceptorState.INITIALIZE;
+            statusResponseTable[0] = ENABLE; flagForResponseAction[0] = (byte)AcceptorState.STATUS;
+            statusResponseTable[1] = ACCEPTING; flagForResponseAction[1] = (byte)AcceptorState.STATUS;
+            statusResponseTable[2] = ESCROW; flagForResponseAction[2] = (byte)AcceptorState.STACK;
+            statusResponseTable[3] = STACKING; flagForResponseAction[3] = (byte)AcceptorState.STATUS;
+            statusResponseTable[4] = VEND_VALID; flagForResponseAction[4] = (byte)AcceptorState.VEND_VALID;
+            statusResponseTable[5] = STACKED; flagForResponseAction[5] = (byte)AcceptorState.STATUS;
+            statusResponseTable[6] = REJECTING; flagForResponseAction[6] = (byte)AcceptorState.GET_DATA;
+            statusResponseTable[7] = RETURNING; flagForResponseAction[7] = (byte)AcceptorState.STATUS;
+            statusResponseTable[8] = HOLDING; flagForResponseAction[8] = (byte)AcceptorState.FATAL_ERROR;
+            statusResponseTable[9] = DISABLE; flagForResponseAction[9] = (byte)AcceptorState.WAITING_FOR_COMMAND;
+            statusResponseTable[10] = INITIALIZE; flagForResponseAction[10] = (byte)AcceptorState.INITIALIZE;
 
-            statusResponseTable[11] = 0x40;                                          flagForResponseAction[11] = (byte)AcceptorState.RESET;
-            statusResponseTable[12] = 0x41;                                          flagForResponseAction[12] = (byte)AcceptorState.RESET;
-            statusResponseTable[13] = 0x42;                                          flagForResponseAction[13] = (byte)AcceptorState.RESET;
+            statusResponseTable[11] = 0x40; flagForResponseAction[11] = (byte)AcceptorState.RESET;
+            statusResponseTable[12] = 0x41; flagForResponseAction[12] = (byte)AcceptorState.RESET;
+            statusResponseTable[13] = 0x42; flagForResponseAction[13] = (byte)AcceptorState.RESET;
 
-            statusResponseTable[14] = STACKER_FULL;                                      flagForResponseAction[14] = (byte)AcceptorState.STATUS;
-            statusResponseTable[15] = STACKER_OPEN;                                      flagForResponseAction[15] = (byte)AcceptorState.STATUS;
-            statusResponseTable[16] = JAM_IN_ACCEPTOR;                                   flagForResponseAction[16] = (byte)AcceptorState.STATUS;
-            statusResponseTable[17] = JAM_IN_STACKER;                                    flagForResponseAction[17] = (byte)AcceptorState.STATUS;
-            statusResponseTable[18] = PAUSE;                                             flagForResponseAction[18] = (byte)AcceptorState.STATUS;
-            statusResponseTable[19] = CHEATED;                                           flagForResponseAction[19] = (byte)AcceptorState.STATUS;
-            statusResponseTable[20] = FAILURE;                                           flagForResponseAction[20] = (byte)AcceptorState.FATAL_ERROR;
-            statusResponseTable[21] = COMMUNICATION_ERROR;                               flagForResponseAction[21] = (byte)AcceptorState.STATUS;
+            statusResponseTable[14] = STACKER_FULL; flagForResponseAction[14] = (byte)AcceptorState.STATUS;
+            statusResponseTable[15] = STACKER_OPEN; flagForResponseAction[15] = (byte)AcceptorState.STATUS;
+            statusResponseTable[16] = JAM_IN_ACCEPTOR; flagForResponseAction[16] = (byte)AcceptorState.STATUS;
+            statusResponseTable[17] = JAM_IN_STACKER; flagForResponseAction[17] = (byte)AcceptorState.STATUS;
+            statusResponseTable[18] = PAUSE; flagForResponseAction[18] = (byte)AcceptorState.STATUS;
+            statusResponseTable[19] = CHEATED; flagForResponseAction[19] = (byte)AcceptorState.STATUS;
+            statusResponseTable[20] = FAILURE; flagForResponseAction[20] = (byte)AcceptorState.FATAL_ERROR;
+            statusResponseTable[21] = COMMUNICATION_ERROR; flagForResponseAction[21] = (byte)AcceptorState.STATUS;
 
             // Códigos adicionales del protocolo
-            statusResponseTable[22] = 0x05; // ENQ                                       
+            statusResponseTable[22] = 0x05; // ENQ
             flagForResponseAction[22] = (byte)AcceptorState.STATUS;
 
-            statusResponseTable[23] = 0x06; // ACK                                       
+            statusResponseTable[23] = 0x06; // ACK
             flagForResponseAction[23] = (byte)AcceptorState.STATUS;
 
-            statusResponseTable[24] = 0x15; // INVALID_COMMAND                           
+            statusResponseTable[24] = 0x15; // INVALID_COMMAND
             flagForResponseAction[24] = (byte)AcceptorState.FATAL_ERROR;
 
             // Códigos de denominación y funciones
-            for(int i = 25; i <= 39; i++) {
+            for (int i = 25; i <= 39; i++)
+            {
                 statusResponseTable[i] = (byte)(0x30 + (i - 25));  // Códigos desde 0x30 hasta 0x44
                 flagForResponseAction[i] = (byte)AcceptorState.STATUS;
             }
 
             // Códigos de error
-            for(int i = 41; i <= 51; i++) {
+            for (int i = 41; i <= 51; i++)
+            {
                 statusResponseTable[i] = (byte)(0x50 + (i - 41));  // Códigos desde 0x50 hasta 0x5A
                 flagForResponseAction[i] = (byte)AcceptorState.STATUS;
             }
 
             // Errores fatales
-            for(int i = 52; i <= 61; i++) {
+            for (int i = 52; i <= 61; i++)
+            {
                 statusResponseTable[i] = (byte)(0x60 + (i - 52));  // Códigos desde 0x60 hasta 0x69
                 flagForResponseAction[i] = (byte)AcceptorState.FATAL_ERROR;
             }
@@ -657,24 +680,14 @@ namespace BillAcceptorWPF
             };
         }
 
-        private ushort CalculateCRC(byte[] data, int length)
+        private byte CalculateBCC(byte[] data, int start, int length)
         {
-            ushort crc = 0;
-            for (int i = 0; i < length; i++)
+            byte bcc = 0;
+            for (int i = start; i <= length; i++)
             {
-                byte ch = data[i];
-                crc = CalculateCRCMain(crc, ch);
+                bcc ^= data[i];
             }
-            return crc;
-        }
-
-        private ushort CalculateCRCMain(ushort crc, byte ch)
-        {
-            byte quo = (byte)((crc ^ ch) & 15);
-            crc = (ushort)((crc >> 4) ^ (quo * 4225));
-            quo = (byte)((crc ^ (ch >> 4)) & 15);
-            crc = (ushort)((crc >> 4) ^ (quo * 4225));
-            return crc;
+            return bcc;
         }
     }
 }
