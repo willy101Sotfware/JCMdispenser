@@ -384,7 +384,7 @@ namespace BillAcceptorWPF
         {
             LogMessage?.Invoke(this, "Waiting for command");
             await Task.Delay(100); // Small delay to prevent CPU hogging
-            await ProcessState();
+            // Ya no llamamos a ProcessState aquí para evitar el bucle infinito
         }
 
         private void CommandStatus()
@@ -532,19 +532,36 @@ namespace BillAcceptorWPF
 
         public async Task StopAccepting()
         {
-            acceptFlag = false;
-            state = AcceptorState.WAITING_FOR_COMMAND;
-            await ProcessState();
+            try
+            {
+                acceptFlag = false;
+                state = AcceptorState.WAITING_FOR_COMMAND;
+                LogMessage?.Invoke(this, "Aceptador detenido");
+            }
+            catch (Exception ex)
+            {
+                LogMessage?.Invoke(this, "Error al detener: " + ex.Message);
+                throw;
+            }
         }
 
         public async Task Disconnect()
         {
-            if (serialPort != null && serialPort.IsOpen)
+            try
             {
-                await StopAccepting();
-                serialPort.Close();
-                serialPort.Dispose();
-                serialPort = null;
+                if (serialPort != null && serialPort.IsOpen)
+                {
+                    await StopAccepting();
+                    serialPort.Close();
+                    serialPort.Dispose();
+                    serialPort = null;
+                    LogMessage?.Invoke(this, "Desconectado");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage?.Invoke(this, "Error al desconectar: " + ex.Message);
+                throw;
             }
         }
 

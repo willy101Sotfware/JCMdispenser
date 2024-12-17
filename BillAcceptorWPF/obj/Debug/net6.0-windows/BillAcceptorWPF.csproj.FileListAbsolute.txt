@@ -27,3 +27,4 @@ c:\Users\Willian\Desktop\JCMdispenser\BillAcceptorWPF\obj\Debug\net6.0-windows\r
 c:\Users\Willian\Desktop\JCMdispenser\BillAcceptorWPF\obj\Debug\net6.0-windows\BillAcceptorWPF.pdb
 c:\Users\Willian\Desktop\JCMdispenser\BillAcceptorWPF\obj\Debug\net6.0-windows\BillAcceptorWPF.genruntimeconfig.cache
 c:\Users\Willian\Desktop\JCMdispenser\BillAcceptorWPF\obj\Debug\net6.0-windows\ref\BillAcceptorWPF.dll
+c:\Users\Willian\Desktop\JCMdispenser\BillAcceptorWPF\obj\Debug\net6.0-windows\BillAcceptorWPF.sourcelink.json
