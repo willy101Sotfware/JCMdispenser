@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("BillAcceptorWPF")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+74d27b6b52c7d4c5d4a1fd22ae4b264666d01864")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ff04bae461fc55e7127c56a173cffa21c516aa17")]
 [assembly: System.Reflection.AssemblyProductAttribute("BillAcceptorWPF")]
 [assembly: System.Reflection.AssemblyTitleAttribute("BillAcceptorWPF")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

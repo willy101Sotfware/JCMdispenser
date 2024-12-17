@@ -143,57 +143,48 @@ namespace BillAcceptorWPF
                 LogMessage?.Invoke(this, $"Probando puerto {port}...");
                 try
                 {
-                    // Crear un puerto temporal para probar
                     using (var testPort = new SerialPort(port, BAUDRATE, Parity.None, 8, StopBits.One))
                     {
-                        testPort.ReadTimeout = 2000; // Aumentado a 2 segundos
+                        testPort.ReadTimeout = 2000;
                         testPort.WriteTimeout = 2000;
                         testPort.Handshake = Handshake.None;
                         testPort.DtrEnable = true;
                         testPort.RtsEnable = true;
-                        testPort.ReadBufferSize = 4096;
-                        testPort.WriteBufferSize = 4096;
 
                         LogMessage?.Invoke(this, $"Abriendo puerto {port}...");
                         testPort.Open();
-                        await Task.Delay(500); // Dar tiempo al puerto para estabilizarse
+                        await Task.Delay(500);
 
-                        // Enviar comando de status como en Arduino
-                        byte[] testCmd = new byte[6];
-                        testCmd[0] = 0x02; // STX
-                        testCmd[1] = 0x03; // Length
-                        testCmd[2] = 0x06; // Command
-                        testCmd[3] = 0x30; // Data1
-                        testCmd[4] = 0x41; // Data2
-                        testCmd[5] = 0x03; // ETX
+                        // Usar el comando de status del Arduino
+                        byte[] testCmd = new byte[5];
+                        testCmd[0] = 0xFC;  // Header
+                        testCmd[1] = 0x05;  // Length
+                        testCmd[2] = 0x11;  // Status command
+                        ushort crc = CalculateCRC(testCmd, 3);
+                        testCmd[3] = (byte)(crc & 0xFF);
+                        testCmd[4] = (byte)(crc >> 8);
 
                         LogMessage?.Invoke(this, $"Enviando comando de prueba a {port}...");
                         testPort.DiscardOutBuffer();
                         testPort.DiscardInBuffer();
                         await Task.Delay(100);
                         testPort.Write(testCmd, 0, testCmd.Length);
-                        await Task.Delay(500); // Dar más tiempo para la respuesta
+                        await Task.Delay(500);
 
-                        // Leer respuesta
                         if (testPort.BytesToRead > 0)
                         {
                             byte[] buffer = new byte[20];
                             int bytesRead = testPort.Read(buffer, 0, buffer.Length);
                             
-                            // Log de la respuesta en hexadecimal
                             string hexResponse = BitConverter.ToString(buffer, 0, bytesRead);
                             LogMessage?.Invoke(this, $"Respuesta de {port}: {hexResponse}");
                             
-                            // Verificar si la respuesta es válida
-                            if (bytesRead > 0 && (buffer[0] == 0x02 || buffer[0] == ENQ || buffer[0] == ACK))
+                            // Verificar respuesta válida
+                            if (bytesRead > 0 && (buffer[0] == 0xFC || buffer[0] == ENQ || buffer[0] == ACK))
                             {
                                 LogMessage?.Invoke(this, $"¡Aceptador de billetes encontrado en {port}!");
                                 return port;
                             }
-                        }
-                        else
-                        {
-                            LogMessage?.Invoke(this, $"No se recibió respuesta de {port}");
                         }
 
                         testPort.Close();
@@ -389,12 +380,13 @@ namespace BillAcceptorWPF
 
         private void CommandStatus()
         {
-            commands[0] = 0x02;
-            commands[1] = 0x03;
-            commands[2] = 0x06;
-            commands[3] = 0x30;
-            commands[4] = 0x41;
-            commands[5] = 0x03;
+            commands[0] = 0xFC;  // Header como en Arduino
+            commands[1] = 0x05;  // Length
+            commands[2] = 0x11;  // Status command
+            // Calculamos CRC
+            ushort crc = CalculateCRC(commands, 3);
+            commands[3] = (byte)(crc & 0xFF);
+            commands[4] = (byte)(crc >> 8);
         }
 
         private void CommandStack1()
@@ -663,6 +655,26 @@ namespace BillAcceptorWPF
                 COMMUNICATION_ERROR => "Error de comunicación",
                 _ => "Error desconocido"
             };
+        }
+
+        private ushort CalculateCRC(byte[] data, int length)
+        {
+            ushort crc = 0;
+            for (int i = 0; i < length; i++)
+            {
+                byte ch = data[i];
+                crc = CalculateCRCMain(crc, ch);
+            }
+            return crc;
+        }
+
+        private ushort CalculateCRCMain(ushort crc, byte ch)
+        {
+            byte quo = (byte)((crc ^ ch) & 15);
+            crc = (ushort)((crc >> 4) ^ (quo * 4225));
+            quo = (byte)((crc ^ (ch >> 4)) & 15);
+            crc = (ushort)((crc >> 4) ^ (quo * 4225));
+            return crc;
         }
     }
 }
